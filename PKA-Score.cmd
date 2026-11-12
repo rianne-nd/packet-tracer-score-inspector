@@ -19,43 +19,31 @@ if not defined PY (
     exit /b 1
 )
 
-if not "%~1"=="" goto haveargs
+rem The Python side shows the file picker and the menu. --no-pause keeps it
+rem from pausing on its own, so this window owns the single final prompt and
+rem never closes before the user can read the output.
+if not "%~1"=="" goto have_args
 
-echo.
-echo   ============================================================
-echo    PKA Score Inspector
-echo   ============================================================
-echo    Drag a .pka or .pkt file onto this window and press Enter,
-echo    or paste its full path below.
-echo.
-set /p "TARGET=  File: "
-if not defined TARGET goto done
-call :run "%TARGET%"
-goto done
+%PY% "%~dp0pka_score.py" --no-pause
+set "RC=%ERRORLEVEL%"
+goto finish
 
-:haveargs
-for %%F in (%*) do call :run "%%~F"
-goto done
-
-:done
-rem Python pauses on success. Only pause here if it failed, so the
-rem window does not close before the user can read an error.
-if errorlevel 1 (
-    echo.
-    echo   Something went wrong. Press any key to close.
-    pause >nul
-    exit /b 1
+:have_args
+for %%F in (%*) do (
+    %PY% "%~dp0pka_score.py" --no-pause "%%~F"
+    if errorlevel 1 goto failed
 )
-exit /b 0
+set "RC=0"
+goto finish
 
-:run
-if "%~1"=="" goto :eof
-if not exist "%~1" (
-    echo.
-    echo   ERROR: file not found: %~1
-    exit /b 1
-)
+:failed
+set "RC=1"
+
+:finish
 echo.
-%PY% "%~dp0pka_score.py" "%~1"
-if errorlevel 1 exit /b 1
-goto :eof
+if not "%RC%"=="0" (
+    echo   The inspector stopped with exit code %RC%.
+)
+set "DUMMY="
+set /p "DUMMY=  Press Enter to close..."
+exit /b %RC%

@@ -20,29 +20,42 @@ Everything is generated locally by deterministic Python. **No AI or LLM is used 
 
 1. Download or clone this repository.
 2. Double-click **`PKA-Score.cmd`**.
-3. Drag the `.pka` or `.pkt` file onto the black window and press Enter.
-4. Choose what you want:
+3. Pick your `.pka` or `.pkt` file in the window that opens.
+4. The tool reads the activity and shows a summary, then asks what you want:
 
 ```text
-  What do you want to see?
+  ----------------------------------------------------------------------------
+  ACTIVITY LOADED
+  ----------------------------------------------------------------------------
+  File       LongTest3-Updated.pka  (409.1 KB)
+  PT build   8.2.2.0400
+  Grading    11,474 points across 11,387 checks
+  Devices    6 need work, 2 already match
 
-    [1] Scoring criteria
-        Every graded check, its point value, and the expected answer.
+  ----------------------------------------------------------------------------
+  WHAT DO YOU WANT TO SEE?
+  ----------------------------------------------------------------------------
 
-    [2] Config commands
-        The IOS commands that earn the points, per device.
+   1  Scoring criteria
+      Every graded check, its point value, and the expected answer.
 
-    [3] Everything  (recommended)
-        Scoring criteria first, then the config commands.
+   2  Config commands
+      IOS commands per device, with an explanation for each line.
 
-    [Q] Quit
+   3  Everything  (recommended)
+      Scoring criteria first, then the config commands.
+
+   Q  Quit
 
   Choice [3]:
 ```
 
-The window stays open after the report is printed, so you can read everything and copy the commands.
+The window stays open after the report is printed, so you can read everything
+and copy the commands. After a report, press **Enter** to quit or pick another
+view of the same file.
 
-You can also drag the activity file directly onto `PKA-Score.cmd` in Explorer.
+You can also drag the activity file directly onto `PKA-Score.cmd` in Explorer;
+it skips the picker and goes straight to the summary and menu.
 
 ---
 
@@ -76,8 +89,9 @@ All output goes into one folder next to the activity, so nothing is scattered ar
     └── ENDPOINTS.txt               PC/server settings + graded PDU tests
 ```
 
-Running the tool again replaces the report folder, so switching between
-"scoring only" and "everything" never leaves stale files behind.
+Running the tool again only rewrites the section you chose, so you can view
+the scoring criteria, return to the menu, and add the config commands without
+losing the first report.
 
 ---
 
@@ -119,11 +133,12 @@ python pka_score.py activity.pka --mode all --outdir C:\reports
 | `--mode commands` | Only the config commands + endpoints. |
 | `--mode all` | Both. |
 | `--outdir DIR` | Put `<activity>_report` somewhere other than next to the file. |
-| `--no-pause` | Never wait for Enter (useful for scripts). |
+| `--no-pause` | Skip the final Enter prompt (the menu still appears). |
 | `--quiet` | Write the files without console output. |
 
-If `--mode` is omitted, the interactive menu is shown. Passing `--no-pause`
-or `--quiet` without a mode defaults to `all`.
+If `--mode` is omitted, the interactive menu is shown. `--no-pause` only skips
+the final Enter prompt; it does not skip the menu. With `--quiet` and no mode,
+the tool writes everything without asking.
 
 ---
 

@@ -7,7 +7,10 @@ third-party Python packages. The only native piece is the Twofish library
 that ships with the decoder.
 
 Usage:
-    python pka_score.py <activity.pka|.pkt> [options]
+    python pka_score.py [activity.pka|.pkt] [options]
+
+    With no file argument the tool opens a file picker. With a file argument
+    it loads the activity, shows a summary, and asks what you want to see.
 
 Options:
     --mode {score,commands,all}   skip the interactive menu
@@ -24,12 +27,13 @@ import re
 import shutil
 import sys
 import textwrap
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
 APP_NAME = "PKA Score Inspector"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 WIDTH = 78
 
 HERE = Path(__file__).resolve().parent
@@ -69,16 +73,16 @@ class C:
 
 def heading(text: str) -> None:
     print()
-    print(f"{C.BOLD}{'=' * WIDTH}{C.RESET}")
-    print(f" {C.BOLD}{text}{C.RESET}")
-    print(f"{C.BOLD}{'=' * WIDTH}{C.RESET}")
+    print(f"  {C.CYAN}{'=' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {C.BOLD}{text}{C.RESET}")
+    print(f"  {C.CYAN}{'=' * (WIDTH - 2)}{C.RESET}")
 
 
 def section(text: str) -> None:
     print()
-    print(f"{C.CYAN}{'-' * WIDTH}{C.RESET}")
-    print(f" {C.BOLD}{text}{C.RESET}")
-    print(f"{C.CYAN}{'-' * WIDTH}{C.RESET}")
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {C.BOLD}{text}{C.RESET}")
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
 
 
 def wrap(text: str, indent: int = 2, width: int = WIDTH) -> str:
@@ -120,6 +124,69 @@ def pause() -> None:
         input(f"\n  {C.DIM}Press Enter to close...{C.RESET}")
     except (EOFError, KeyboardInterrupt):
         print()
+
+
+def banner() -> None:
+    print()
+    print(f"  {C.CYAN}{'=' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {C.BOLD}PKA SCORE INSPECTOR{C.RESET}  {C.DIM}v{APP_VERSION}{C.RESET}")
+    print(
+        f"  {C.DIM}Read the grading key. Generate the IOS answers. "
+        f"No AI, no uploads.{C.RESET}"
+    )
+    print(f"  {C.CYAN}{'=' * (WIDTH - 2)}{C.RESET}")
+
+
+def choose_file() -> str | None:
+    """Open a file picker. Return None if the user cancels.
+
+    Tkinter ships with the python.org Windows installer. If it is missing,
+    fall back to the old drag-and-paste prompt.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception:
+        tk = None
+
+    if tk is not None:
+        root = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            root.update()
+            path = filedialog.askopenfilename(
+                parent=root,
+                title="Select a Packet Tracer activity",
+                filetypes=[
+                    ("Packet Tracer activities", "*.pka *.pkt"),
+                    ("Packet Tracer activity (.pka)", "*.pka"),
+                    ("Packet Tracer topology (.pkt)", "*.pkt"),
+                    ("All files", "*.*"),
+                ],
+            )
+            root.destroy()
+            return path or None
+        except Exception:
+            if root is not None:
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+
+    print()
+    print(
+        wrap(
+            "Drag a .pka or .pkt file onto this window and press Enter, or "
+            "paste its full path below."
+        )
+    )
+    try:
+        value = input("  File: ").strip().strip('"')
+    except EOFError:
+        return None
+    return value or None
 
 
 class ToolError(Exception):
@@ -1271,111 +1338,175 @@ def print_written(report_dir: Path, written) -> None:
 # --------------------------------------------------------------------------
 # Menu + main
 # --------------------------------------------------------------------------
-def ask_mode() -> str:
+def ask_mode(default: str = "3") -> str:
+    default = default.upper()
     print()
-    print(f"  {C.BOLD}What do you want to see?{C.RESET}")
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {C.BOLD}WHAT DO YOU WANT TO SEE?{C.RESET}")
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
     print()
-    print("    [1] Scoring criteria")
-    print("        Every graded check, its point value, and the expected answer.")
+    print(f"   {C.BOLD}1{C.RESET}  Scoring criteria")
+    print(
+        f"      {C.DIM}Every graded check, its point value, and the "
+        f"expected answer.{C.RESET}"
+    )
     print()
-    print("    [2] Config commands")
-    print("        The IOS commands that earn the points, per device.")
+    print(f"   {C.BOLD}2{C.RESET}  Config commands")
+    print(
+        f"      {C.DIM}IOS commands per device, with an explanation for "
+        f"each line.{C.RESET}"
+    )
     print()
-    print("    [3] Everything  (recommended)")
-    print("        Scoring criteria first, then the config commands.")
+    print(f"   {C.BOLD}3{C.RESET}  Everything  {C.GREEN}(recommended){C.RESET}")
+    print(
+        f"      {C.DIM}Scoring criteria first, then the config commands."
+        f"{C.RESET}"
+    )
     print()
-    print("    [Q] Quit")
+    print(f"   {C.BOLD}Q{C.RESET}  Quit")
     while True:
         try:
-            choice = input("\n  Choice [3]: ").strip().lower()
+            choice = input(f"\n  Choice [{default}]: ").strip().lower()
         except EOFError:
-            return "all"
-        if choice in ("", "3", "all", "a", "everything"):
-            return "all"
+            choice = default.lower()
+        if not choice:
+            choice = default.lower()
         if choice in ("1", "score", "s", "scoring"):
             return "score"
         if choice in ("2", "commands", "c", "config", "cmd"):
             return "commands"
+        if choice in ("3", "all", "a", "everything"):
+            return "all"
         if choice in ("q", "quit", "exit"):
             return "quit"
-        print("  Please type 1, 2, 3 or Q.")
+        print(f"  {C.YELLOW}Please type 1, 2, 3 or Q.{C.RESET}")
 
 
-def run(pka: Path, mode: str, outdir: Path, quiet: bool) -> None:
-    if not quiet:
-        print()
-        print(f"  {C.BOLD}{APP_NAME}{C.RESET}  v{APP_VERSION}")
-        print(f"  File: {pka}")
-        print("  Decrypting ...", end="", flush=True)
+class Loaded:
+    """Everything read from the activity, decoded once and reused."""
+
+    def __init__(self, pka: Path, root: ET.Element, version: str):
+        self.pka = pka
+        self.root = root
+        self.version = version
+        self.analysis = Analysis(root, pka, version)
+        self.snapshots = collect_snapshots(root)
+        self.start_idx = 0
+        self.answer_idx = 0
+        self.per_device = {}
+        self.unchanged = []
+        self.endpoints = {}
+        self.pdus = []
+
+        if self.has_configs:
+            self.start_idx, self.answer_idx = pick_snapshots(
+                self.snapshots, self.analysis.checks
+            )
+            self.per_device, self.unchanged = build_all_commands(
+                self.snapshots, self.start_idx, self.answer_idx
+            )
+            self.endpoints = collect_endpoint_settings(root)
+            self.pdus = collect_pdus(root)
+
+    @property
+    def has_configs(self) -> bool:
+        return any(
+            dev.lines for snapshot in self.snapshots for dev in snapshot.values()
+        )
+
+
+def load_activity(pka: Path) -> Loaded:
     text = decode_file(pka)
     root = parse_xml(text)
-    if not quiet:
-        print(" done")
-
     version = (root.findtext("VERSION") or "").strip() or "unknown"
-    analysis = Analysis(root, pka, version)
+    return Loaded(pka, root, version)
+
+
+def print_file_card(loaded: Loaded) -> None:
+    analysis = loaded.analysis
+    size = human_size(loaded.pka.stat().st_size)
+    print()
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {C.BOLD}ACTIVITY LOADED{C.RESET}")
+    print(f"  {C.CYAN}{'-' * (WIDTH - 2)}{C.RESET}")
+    print(f"  {'File':<10} {loaded.pka.name}  {C.DIM}({size}){C.RESET}")
+    print(f"  {'PT build':<10} {loaded.version}")
+    print(
+        f"  {'Grading':<10} {C.BOLD}{analysis.total:,}{C.RESET} points across "
+        f"{C.BOLD}{len(analysis.checks):,}{C.RESET} checks"
+    )
+    if not analysis.checks:
+        print(
+            f"  {'Note':<10} {C.YELLOW}no grading tree found "
+            f"(this looks like a plain topology){C.RESET}"
+        )
+    if loaded.has_configs:
+        line = f"  {'Devices':<10} {len(loaded.per_device)} need work"
+        if loaded.unchanged:
+            line += f", {len(loaded.unchanged)} already match"
+        print(line)
+
+
+def run(loaded: Loaded, mode: str, outdir: Path, quiet: bool) -> None:
+    pka = loaded.pka
+    analysis = loaded.analysis
     report_dir = outdir / f"{pka.stem}_report"
     written = []
 
-    snapshots = []
-    start_idx = 0
-    answer_idx = 0
-    per_device = {}
-    unchanged = []
-    endpoints = {}
-    pdus = []
-
-    if mode in ("commands", "all"):
-        snapshots = collect_snapshots(root)
-        if not snapshots or not any(
-            dev.lines for snap in snapshots for dev in snap.values()
-        ):
-            raise ToolError(
-                "This file has no running-config text, so there is nothing to "
-                "build commands from. It may be a plain topology rather than a "
-                "graded activity."
-            )
-        start_idx, answer_idx = pick_snapshots(snapshots, analysis.checks)
-        per_device, unchanged = build_all_commands(
-            snapshots, start_idx, answer_idx
+    if mode in ("commands", "all") and not loaded.has_configs:
+        raise ToolError(
+            "This file has no running-config text, so there is nothing to "
+            "build commands from. It may be a plain topology rather than a "
+            "graded activity."
         )
-        endpoints = collect_endpoint_settings(root)
-        pdus = collect_pdus(root)
 
-    # Start from a clean report folder so switching modes never leaves stale
-    # files behind.
-    reset_dir(report_dir)
-
+    # Clear only the subfolder being regenerated, so a user can look at the
+    # scoring report, come back to the menu, and add the commands without
+    # deleting the first report.
     if mode in ("score", "all"):
         scoring_dir = report_dir / "scoring"
+        reset_dir(scoring_dir)
         for path in write_scoring_files(scoring_dir, analysis):
             written.append(path.relative_to(report_dir))
 
     if mode in ("commands", "all"):
         commands_dir = report_dir / "commands"
+        reset_dir(commands_dir)
         for path in write_command_files(
-            commands_dir, pka.name, per_device, endpoints, pdus
+            commands_dir, pka.name, loaded.per_device, loaded.endpoints, loaded.pdus
         ):
             written.append(path.relative_to(report_dir))
 
         changes_path = report_dir / "changes.txt"
         write_file(
-            changes_path, build_changes_report(snapshots, start_idx, answer_idx)
+            changes_path,
+            build_changes_report(
+                loaded.snapshots, loaded.start_idx, loaded.answer_idx
+            ),
         )
         written.append(Path("changes.txt"))
 
+    has_scoring = (report_dir / "scoring").is_dir()
+    has_commands = (report_dir / "commands").is_dir()
+    effective_mode = (
+        "all"
+        if has_scoring and has_commands
+        else "score"
+        if has_scoring
+        else "commands"
+    )
     write_file(
         report_dir / "README.txt",
         build_report_readme(
             analysis,
-            mode,
-            len(snapshots),
-            start_idx,
-            answer_idx,
-            len(per_device),
-            len(unchanged),
-            len(endpoints),
-            len(pdus),
+            effective_mode,
+            len(loaded.snapshots),
+            loaded.start_idx,
+            loaded.answer_idx,
+            len(loaded.per_device),
+            len(loaded.unchanged),
+            len(loaded.endpoints),
+            len(loaded.pdus),
         ),
     )
     written.append(Path("README.txt"))
@@ -1392,13 +1523,13 @@ def run(pka: Path, mode: str, outdir: Path, quiet: bool) -> None:
     if mode in ("commands", "all"):
         print_commands(
             analysis,
-            snapshots,
-            start_idx,
-            answer_idx,
-            per_device,
-            unchanged,
-            endpoints,
-            pdus,
+            loaded.snapshots,
+            loaded.start_idx,
+            loaded.answer_idx,
+            loaded.per_device,
+            loaded.unchanged,
+            loaded.endpoints,
+            loaded.pdus,
             report_dir / "commands" / "ALL_COMMANDS.txt",
         )
     print_written(report_dir, written)
@@ -1425,7 +1556,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--no-pause",
         action="store_true",
-        help="never wait for Enter (scripting)",
+        help="skip the final Enter prompt",
     )
     parser.add_argument(
         "--quiet",
@@ -1439,47 +1570,86 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    interactive = not args.no_pause and not args.quiet
+    show_ui = not args.quiet
+    pause_at_end = not args.no_pause and not args.quiet
+
+    if show_ui:
+        banner()
 
     try:
-        if args.mode:
-            mode = args.mode
-        elif not interactive:
-            mode = "all"
-        else:
-            mode = ask_mode()
-            if mode == "quit":
-                return 0
-
         pka_arg = args.pka
         if not pka_arg:
-            if not interactive:
+            if not show_ui:
                 raise ToolError("No .pka/.pkt file given.")
-            try:
-                pka_arg = input("  Path to .pka/.pkt: ").strip().strip('"')
-            except EOFError:
-                raise ToolError("No .pka/.pkt file given.") from None
+            pka_arg = choose_file()
             if not pka_arg:
-                raise ToolError("No .pka/.pkt file given.")
+                print()
+                print(wrap("No file selected. Nothing to do."))
+                return 0
 
         pka = Path(pka_arg).expanduser().resolve()
         if not pka.exists():
             raise ToolError(f"File not found: {pka}")
-        if pka.suffix.lower() not in (".pka", ".pkt") and not args.quiet:
+        if pka.suffix.lower() not in (".pka", ".pkt") and show_ui:
             print(
-                f"  warning: '{pka.suffix or 'no extension'}' is not .pka/.pkt; "
+                f"  {C.YELLOW}warning:{C.RESET} "
+                f"'{pka.suffix or 'no extension'}' is not .pka/.pkt; "
                 "trying anyway"
             )
 
         outdir = (
             Path(args.outdir).expanduser().resolve() if args.outdir else pka.parent
         )
-        run(pka, mode, outdir, args.quiet)
+
+        if show_ui:
+            print()
+            print(f"  Reading {C.BOLD}{pka.name}{C.RESET} ...", end="", flush=True)
+            started = time.perf_counter()
+            loaded = load_activity(pka)
+            elapsed = time.perf_counter() - started
+            print(f" done {C.DIM}({elapsed:.1f}s){C.RESET}")
+            print_file_card(loaded)
+        else:
+            loaded = load_activity(pka)
+
+        if args.mode:
+            run(loaded, args.mode, outdir, args.quiet)
+            if pause_at_end:
+                pause()
+            return 0
+
+        if not show_ui:
+            run(loaded, "all", outdir, True)
+            return 0
+
+        default = "3"
+        generated = False
+        while True:
+            mode = ask_mode(default)
+            if mode == "quit":
+                break
+            try:
+                run(loaded, mode, outdir, False)
+                generated = True
+            except ToolError as exc:
+                print()
+                print(f"  {C.RED}ERROR:{C.RESET} {exc}")
+            default = "Q"
+
+        if generated:
+            print()
+            print(
+                f"  {C.DIM}Report folder: "
+                f"{outdir / (pka.stem + '_report')}{C.RESET}"
+            )
+        if pause_at_end:
+            pause()
+        return 0
 
     except ToolError as exc:
         print()
         print(f"  {C.RED}ERROR:{C.RESET} {exc}")
-        if interactive:
+        if pause_at_end:
             pause()
         return 1
     except KeyboardInterrupt:
@@ -1491,13 +1661,9 @@ def main(argv=None) -> int:
         import traceback
 
         traceback.print_exc()
-        if interactive:
+        if pause_at_end:
             pause()
         return 1
-
-    if interactive:
-        pause()
-    return 0
 
 
 if __name__ == "__main__":
